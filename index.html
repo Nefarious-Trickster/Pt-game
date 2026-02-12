@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skyward Ruins - Platformer</title>
+  <style>
+    :root {
+      --ui-bg: rgba(7, 11, 28, 0.75);
+      --ui-border: rgba(145, 176, 255, 0.35);
+      --text: #e8f2ff;
+      --accent: #4ae6ff;
+      --danger: #ff7688;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 20% 20%, #394c9f 0%, #191f4d 28%, transparent 55%),
+        radial-gradient(circle at 80% 15%, #4e7bd8 0%, transparent 40%),
+        linear-gradient(180deg, #060a21 0%, #080b18 35%, #05060f 100%);
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden;
+    }
+
+    #wrap {
+      position: relative;
+      width: min(96vw, 1200px);
+      aspect-ratio: 16 / 9;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 2px solid rgba(138, 166, 255, 0.32);
+      box-shadow: 0 28px 85px rgba(0, 0, 0, 0.55), inset 0 0 35px rgba(84, 131, 255, 0.12);
+      background: #000;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      image-rendering: optimizeSpeed;
+    }
+
+    .hud {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      display: flex;
+      gap: 12px;
+      z-index: 2;
+      font-weight: 600;
+    }
+
+    .chip {
+      background: var(--ui-bg);
+      border: 1px solid var(--ui-border);
+      backdrop-filter: blur(6px);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: clamp(12px, 1.3vw, 16px);
+      letter-spacing: 0.3px;
+    }
+
+    .panel {
+      position: absolute;
+      z-index: 3;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+    }
+
+    .panel-card {
+      pointer-events: auto;
+      width: min(76%, 640px);
+      padding: clamp(18px, 2.2vw, 30px);
+      border-radius: 16px;
+      background: linear-gradient(180deg, rgba(14, 24, 55, 0.88), rgba(9, 15, 32, 0.82));
+      border: 1px solid rgba(145, 176, 255, 0.33);
+      box-shadow: 0 20px 80px rgba(0, 0, 0, 0.6);
+      text-align: center;
+    }
+
+    .title {
+      margin: 0 0 10px;
+      font-size: clamp(24px, 3vw, 42px);
+      color: #f6fbff;
+      text-shadow: 0 0 18px rgba(101, 212, 255, 0.6);
+    }
+
+    .sub {
+      margin: 0 0 16px;
+      color: #c6d8ff;
+      line-height: 1.5;
+      font-size: clamp(13px, 1.4vw, 18px);
+    }
+
+    kbd {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-bottom-width: 2px;
+      border-radius: 6px;
+      font-family: inherit;
+      padding: 2px 7px;
+      white-space: nowrap;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 10px;
+      background: linear-gradient(180deg, #59f6ff, #2fb7ff);
+      color: #032446;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      padding: 10px 16px;
+      font-size: 15px;
+      cursor: pointer;
+      transition: transform .15s ease, filter .2s ease;
+    }
+
+    button:hover { transform: translateY(-1px); filter: brightness(1.05); }
+    button:active { transform: translateY(1px); }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game" width="1280" height="720" aria-label="Skyward Ruins Platformer"></canvas>
+
+    <div class="hud">
+      <div class="chip" id="levelHud">Level 1</div>
+      <div class="chip" id="gemHud">Gems 0 / 0</div>
+      <div class="chip" id="lifeHud">Lives 3</div>
+      <div class="chip" id="dashHud">Dash Ready</div>
+    </div>
+
+    <div id="startPanel" class="panel">
+      <div class="panel-card">
+        <h1 class="title">Skyward Ruins</h1>
+        <p class="sub">Dash, wall-slide, double-jump, and outsmart enemies through <strong>3 detailed handcrafted levels</strong>.
+        Collect all gems to activate the exit gate and escape each ruin.</p>
+        <p class="sub">
+          Move <kbd>A</kbd>/<kbd>D</kbd> or <kbd>←</kbd>/<kbd>→</kbd> · Jump <kbd>W</kbd>/<kbd>↑</kbd>/<kbd>Space</kbd> · Dash <kbd>Shift</kbd>
+        </p>
+        <button id="startBtn">Begin Adventure</button>
+      </div>
+    </div>
+
+    <div id="messagePanel" class="panel hidden">
+      <div class="panel-card">
+        <h2 class="title" id="messageTitle">Level Complete</h2>
+        <p class="sub" id="messageBody"></p>
+        <button id="messageBtn">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    const startPanel = document.getElementById('startPanel');
+    const messagePanel = document.getElementById('messagePanel');
+    const messageTitle = document.getElementById('messageTitle');
+    const messageBody = document.getElementById('messageBody');
+    const messageBtn = document.getElementById('messageBtn');
+    const startBtn = document.getElementById('startBtn');
+
+    const levelHud = document.getElementById('levelHud');
+    const gemHud = document.getElementById('gemHud');
+    const lifeHud = document.getElementById('lifeHud');
+    const dashHud = document.getElementById('dashHud');
+
+    const keys = {};
+    const gravity = 0.58;
+    let gameState = 'menu';
+    let levelIndex = 0;
+    let particles = [];
+    let screenShake = 0;
+
+    const player = {
+      x: 80, y: 420, w: 40, h: 58,
+      vx: 0, vy: 0,
+      speed: 0.8,
+      maxSpeed: 6,
+      jumpPower: 13.8,
+      grounded: false,
+      facing: 1,
+      coyoteTime: 0,
+      jumpBuffer: 0,
+      jumpsLeft: 2,
+      wallSliding: false,
+      onWall: 0,
+      dashPower: 15,
+      dashCooldown: 0,
+      dashing: 0,
+      dashReady: true,
+      lives: 3,
+      spawnX: 80,
+      spawnY: 420,
+      invuln: 0
+    };
+
+    const levels = [
+      {
+        name: 'Shimmering Approach',
+        sky: ['#2646aa', '#1a2569', '#0b0f2c'],
+        spawn: [80, 430],
+        exit: { x: 1190, y: 450, w: 48, h: 80 },
+        platforms: [
+          { x: 0, y: 650, w: 1280, h: 70, type: 'solid' },
+          { x: 130, y: 560, w: 170, h: 26, type: 'solid' },
+          { x: 370, y: 500, w: 160, h: 24, type: 'solid' },
+          { x: 610, y: 450, w: 140, h: 22, type: 'solid' },
+          { x: 840, y: 540, w: 180, h: 24, type: 'solid' },
+          { x: 1040, y: 470, w: 180, h: 24, type: 'solid' },
+          { x: 500, y: 620, w: 120, h: 18, type: 'moving', range: 140, dir: 1, speed: 1.2, axis: 'x', base: 500 }
+        ],
+        enemies: [
+          { x: 400, y: 620, w: 42, h: 30, minX: 350, maxX: 620, vx: 1.6 },
+          { x: 850, y: 510, w: 42, h: 30, minX: 830, maxX: 980, vx: 1.8 }
+        ],
+        gems: [
+          { x: 170, y: 515 }, { x: 430, y: 450 }, { x: 680, y: 395 }, { x: 910, y: 490 }, { x: 1120, y: 420 }
+        ],
+      },
+      {
+        name: 'Windglass Citadel',
+        sky: ['#3f2ea2', '#21295f', '#101129'],
+        spawn: [60, 580],
+        exit: { x: 1180, y: 180, w: 56, h: 88 },
+        platforms: [
+          { x: 0, y: 650, w: 1280, h: 70, type: 'solid' },
+          { x: 120, y: 580, w: 130, h: 22, type: 'solid' },
+          { x: 320, y: 500, w: 130, h: 22, type: 'solid' },
+          { x: 530, y: 420, w: 150, h: 22, type: 'solid' },
+          { x: 780, y: 340, w: 140, h: 22, type: 'solid' },
+          { x: 1020, y: 260, w: 150, h: 22, type: 'solid' },
+          { x: 260, y: 380, w: 100, h: 18, type: 'moving', axis: 'y', range: 120, speed: 1.3, dir: 1, base: 380 },
+          { x: 680, y: 270, w: 110, h: 18, type: 'moving', axis: 'y', range: 140, speed: 1.45, dir: -1, base: 270 }
+        ],
+        enemies: [
+          { x: 340, y: 470, w: 44, h: 30, minX: 320, maxX: 460, vx: 2 },
+          { x: 1030, y: 230, w: 44, h: 30, minX: 1020, maxX: 1170, vx: 2.3 }
+        ],
+        gems: [
+          { x: 180, y: 530 }, { x: 390, y: 450 }, { x: 570, y: 370 }, { x: 830, y: 290 }, { x: 1090, y: 205 }, { x: 740, y: 220 }
+        ],
+      },
+      {
+        name: 'Celestial Forge',
+        sky: ['#973172', '#4b2056', '#130d27'],
+        spawn: [50, 590],
+        exit: { x: 1175, y: 110, w: 58, h: 90 },
+        platforms: [
+          { x: 0, y: 650, w: 1280, h: 70, type: 'solid' },
+          { x: 140, y: 580, w: 140, h: 24, type: 'solid' },
+          { x: 320, y: 530, w: 140, h: 24, type: 'solid' },
+          { x: 520, y: 470, w: 150, h: 24, type: 'solid' },
+          { x: 730, y: 390, w: 145, h: 24, type: 'solid' },
+          { x: 930, y: 305, w: 140, h: 24, type: 'solid' },
+          { x: 1080, y: 220, w: 120, h: 24, type: 'solid' },
+          { x: 430, y: 610, w: 110, h: 18, type: 'moving', axis: 'x', range: 180, speed: 1.7, dir: 1, base: 430 },
+          { x: 840, y: 470, w: 110, h: 18, type: 'moving', axis: 'y', range: 160, speed: 1.4, dir: -1, base: 470 }
+        ],
+        enemies: [
+          { x: 360, y: 500, w: 46, h: 32, minX: 310, maxX: 470, vx: 2.1 },
+          { x: 760, y: 360, w: 46, h: 32, minX: 730, maxX: 900, vx: 2.2 },
+          { x: 950, y: 275, w: 46, h: 32, minX: 930, maxX: 1090, vx: 2.4 }
+        ],
+        gems: [
+          { x: 195, y: 535 }, { x: 380, y: 480 }, { x: 560, y: 420 }, { x: 780, y: 340 },
+          { x: 980, y: 255 }, { x: 1130, y: 175 }, { x: 900, y: 430 }
+        ],
+      }
+    ];
+
+    let active = null;
+
+    function cloneLevel(data) {
+      return {
+        ...data,
+        platforms: data.platforms.map(p => ({ ...p })),
+        enemies: data.enemies.map(e => ({ ...e })),
+        gems: data.gems.map(g => ({ ...g, collected: false }))
+      };
+    }
+
+    function loadLevel(index) {
+      active = cloneLevel(levels[index]);
+      levelIndex = index;
+      [player.x, player.y] = active.spawn;
+      [player.spawnX, player.spawnY] = active.spawn;
+      player.vx = player.vy = 0;
+      player.jumpsLeft = 2;
+      player.dashReady = true;
+      player.dashCooldown = 0;
+      player.dashing = 0;
+      particles = [];
+      updateHud();
+    }
+
+    function updateHud() {
+      levelHud.textContent = `Level ${levelIndex + 1}: ${active.name}`;
+      const collected = active.gems.filter(g => g.collected).length;
+      gemHud.textContent = `Gems ${collected} / ${active.gems.length}`;
+      lifeHud.textContent = `Lives ${player.lives}`;
+      dashHud.textContent = player.dashReady ? 'Dash Ready' : `Dash CD ${(player.dashCooldown / 60).toFixed(1)}s`;
+    }
+
+    function rectOverlap(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function spawnBurst(x, y, color, count = 12) {
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 6,
+          vy: (Math.random() - 0.6) * 6,
+          life: 30 + Math.random() * 20,
+          size: 2 + Math.random() * 4,
+          color
+        });
+      }
+    }
+
+    function hurtPlayer() {
+      if (player.invuln > 0) return;
+      player.lives -= 1;
+      player.invuln = 90;
+      screenShake = 18;
+      spawnBurst(player.x + player.w / 2, player.y + player.h / 2, '#ff7e97', 20);
+      if (player.lives <= 0) {
+        showMessage('Defeat...', 'The ruins claimed you this time. Try again from Level 1.', () => {
+          player.lives = 3;
+          loadLevel(0);
+          gameState = 'playing';
+        });
+      } else {
+        player.x = player.spawnX;
+        player.y = player.spawnY;
+        player.vx = 0;
+        player.vy = 0;
+      }
+      updateHud();
+    }
+
+    function completeLevel() {
+      if (levelIndex < levels.length - 1) {
+        showMessage('Gate Opened!', `You conquered ${active.name}. Prepare for ${levels[levelIndex + 1].name}.`, () => {
+          loadLevel(levelIndex + 1);
+          gameState = 'playing';
+        });
+      } else {
+        showMessage('Victory!', 'You mastered all ruins. Gems blaze, gates obey, and the citadel bows to you.', () => {
+          player.lives = 3;
+          loadLevel(0);
+          gameState = 'playing';
+        });
+      }
+    }
+
+    function showMessage(title, text, onContinue) {
+      gameState = 'message';
+      messageTitle.textContent = title;
+      messageBody.textContent = text;
+      messagePanel.classList.remove('hidden');
+      messageBtn.onclick = () => {
+        messagePanel.classList.add('hidden');
+        onContinue();
+      };
+    }
+
+    function input() {
+      const left = keys['a'] || keys['arrowleft'];
+      const right = keys['d'] || keys['arrowright'];
+      const jump = keys[' '] || keys['w'] || keys['arrowup'];
+      const dash = keys['shift'];
+
+      if (left) {
+        player.vx -= player.speed;
+        player.facing = -1;
+      }
+      if (right) {
+        player.vx += player.speed;
+        player.facing = 1;
+      }
+
+      if (!left && !right) player.vx *= player.grounded ? 0.8 : 0.92;
+      player.vx = Math.max(-player.maxSpeed, Math.min(player.maxSpeed, player.vx));
+
+      if (jump) player.jumpBuffer = 8;
+
+      if (player.jumpBuffer > 0) {
+        if (player.grounded || player.coyoteTime > 0) {
+          player.vy = -player.jumpPower;
+          player.grounded = false;
+          player.coyoteTime = 0;
+          player.jumpBuffer = 0;
+          player.jumpsLeft = 1;
+          spawnBurst(player.x + player.w / 2, player.y + player.h, '#8de6ff', 8);
+        } else if (player.onWall !== 0) {
+          player.vy = -player.jumpPower * 0.95;
+          player.vx = -player.onWall * 7.5;
+          player.jumpBuffer = 0;
+          player.jumpsLeft = 1;
+          spawnBurst(player.x + player.w / 2, player.y + player.h / 2, '#b6c5ff', 12);
+        } else if (player.jumpsLeft > 0) {
+          player.vy = -player.jumpPower * 0.88;
+          player.jumpsLeft = 0;
+          player.jumpBuffer = 0;
+          spawnBurst(player.x + player.w / 2, player.y + player.h / 2, '#64f2ff', 10);
+        }
+      }
+
+      if (dash && player.dashReady && !player.dashing) {
+        player.dashing = 10;
+        player.dashReady = false;
+        player.dashCooldown = 130;
+        player.vy *= 0.2;
+        player.vx = player.facing * player.dashPower;
+        spawnBurst(player.x + player.w / 2, player.y + player.h / 2, '#7bf4ff', 20);
+      }
+    }
+
+    function physics() {
+      active.platforms.forEach(p => {
+        if (p.type === 'moving') {
+          if (p.axis === 'x') {
+            p.x += p.speed * p.dir;
+            if (Math.abs(p.x - p.base) > p.range) p.dir *= -1;
+          } else {
+            p.y += p.speed * p.dir;
+            if (Math.abs(p.y - p.base) > p.range) p.dir *= -1;
+          }
+        }
+      });
+
+      active.enemies.forEach(e => {
+        e.x += e.vx;
+        if (e.x < e.minX || e.x + e.w > e.maxX) e.vx *= -1;
+      });
+
+      if (player.dashCooldown > 0) {
+        player.dashCooldown -= 1;
+        if (player.dashCooldown <= 0) player.dashReady = true;
+      }
+      if (player.dashing > 0) {
+        player.dashing -= 1;
+      } else {
+        player.vy += gravity;
+      }
+
+      player.onWall = 0;
+      player.x += player.vx;
+
+      for (const p of active.platforms) {
+        if (!rectOverlap(player, p)) continue;
+        if (player.vx > 0) {
+          player.x = p.x - player.w;
+          player.vx = 0;
+          player.onWall = 1;
+        } else if (player.vx < 0) {
+          player.x = p.x + p.w;
+          player.vx = 0;
+          player.onWall = -1;
+        }
+      }
+
+      player.y += player.vy;
+      player.grounded = false;
+
+      for (const p of active.platforms) {
+        if (!rectOverlap(player, p)) continue;
+        if (player.vy > 0) {
+          player.y = p.y - player.h;
+          player.vy = 0;
+          player.grounded = true;
+          player.jumpsLeft = 1;
+          if (p.type === 'moving') {
+            if (p.axis === 'x') player.x += p.speed * p.dir;
+            if (p.axis === 'y') player.y += p.speed * p.dir;
+          }
+        } else if (player.vy < 0) {
+          player.y = p.y + p.h;
+          player.vy = 0;
+        }
+      }
+
+      if (!player.grounded) {
+        player.coyoteTime = Math.max(0, player.coyoteTime - 1);
+      } else {
+        player.coyoteTime = 8;
+      }
+
+      player.wallSliding = player.onWall !== 0 && !player.grounded && player.vy > 0;
+      if (player.wallSliding) player.vy = Math.min(player.vy, 2.1);
+
+      player.jumpBuffer = Math.max(0, player.jumpBuffer - 1);
+
+      if (player.y > canvas.height + 150) hurtPlayer();
+
+      for (const enemy of active.enemies) {
+        if (!rectOverlap(player, enemy)) continue;
+        const stomp = player.vy > 1 && player.y + player.h - 10 < enemy.y;
+        if (stomp) {
+          enemy.dead = true;
+          player.vy = -9.5;
+          screenShake = 8;
+          spawnBurst(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, '#ffb067', 18);
+        } else {
+          hurtPlayer();
+        }
+      }
+      active.enemies = active.enemies.filter(e => !e.dead);
+
+      active.gems.forEach(g => {
+        if (g.collected) return;
+        const hit = rectOverlap(player, { x: g.x - 10, y: g.y - 10, w: 20, h: 20 });
+        if (hit) {
+          g.collected = true;
+          spawnBurst(g.x, g.y, '#5af3ff', 14);
+          updateHud();
+        }
+      });
+
+      const collected = active.gems.filter(g => g.collected).length;
+      if (collected === active.gems.length && rectOverlap(player, active.exit)) {
+        completeLevel();
+      }
+
+      if (player.invuln > 0) player.invuln -= 1;
+      updateHud();
+    }
+
+    function drawBackground() {
+      const [top, mid, bottom] = active.sky;
+      const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      grad.addColorStop(0, top);
+      grad.addColorStop(0.5, mid);
+      grad.addColorStop(1, bottom);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const t = performance.now() * 0.00016;
+      for (let layer = 0; layer < 3; layer++) {
+        const alpha = 0.09 + layer * 0.06;
+        const height = 110 + layer * 55;
+        const offset = ((t * (18 + layer * 12)) % 280);
+        ctx.fillStyle = `rgba(215,232,255,${alpha})`;
+        for (let i = -1; i < 7; i++) {
+          const x = i * 240 + offset * (layer % 2 ? -1 : 1);
+          ctx.beginPath();
+          ctx.moveTo(x, canvas.height);
+          ctx.lineTo(x + 120, canvas.height - height - Math.sin((i + t) * 2.5) * 22);
+          ctx.lineTo(x + 260, canvas.height);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      for (let i = 0; i < 120; i++) {
+        const x = (i * 97) % canvas.width;
+        const y = (i * 173 + Math.sin(t * 5 + i) * 30) % canvas.height;
+        const r = (i % 3) + 0.6;
+        ctx.fillStyle = `rgba(255,255,255,${0.2 + (i % 5) * 0.1})`;
+        ctx.fillRect(x, y, r, r);
+      }
+    }
+
+    function roundRect(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function drawWorld() {
+      drawBackground();
+
+      active.platforms.forEach(p => {
+        const g = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
+        g.addColorStop(0, p.type === 'moving' ? '#92f5ff' : '#6f88ff');
+        g.addColorStop(1, p.type === 'moving' ? '#2f78cb' : '#2a3d8c');
+        ctx.fillStyle = g;
+        roundRect(p.x, p.y, p.w, p.h, 7);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.24)';
+        ctx.stroke();
+      });
+
+      active.gems.forEach(g => {
+        if (g.collected) return;
+        const pulse = 4 + Math.sin(performance.now() * 0.008 + g.x) * 2;
+        ctx.fillStyle = '#70f5ff';
+        ctx.beginPath();
+        ctx.moveTo(g.x, g.y - 11 - pulse * 0.2);
+        ctx.lineTo(g.x + 10, g.y);
+        ctx.lineTo(g.x, g.y + 11 + pulse * 0.2);
+        ctx.lineTo(g.x - 10, g.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = '#5cf4ff';
+        ctx.strokeStyle = '#d8ffff';
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      });
+
+      const collected = active.gems.filter(g => g.collected).length;
+      const gateOpen = collected === active.gems.length;
+      const e = active.exit;
+      const gateGrad = ctx.createLinearGradient(e.x, e.y, e.x + e.w, e.y + e.h);
+      gateGrad.addColorStop(0, gateOpen ? '#75ffc1' : '#ff7e9d');
+      gateGrad.addColorStop(1, gateOpen ? '#2eaf88' : '#6d2a52');
+      ctx.fillStyle = gateGrad;
+      roundRect(e.x, e.y, e.w, e.h, 10);
+      ctx.fill();
+      ctx.strokeStyle = gateOpen ? '#e3fff0' : '#ffd3df';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.lineWidth = 1;
+
+      active.enemies.forEach(en => {
+        ctx.fillStyle = '#ff9c6b';
+        roundRect(en.x, en.y, en.w, en.h, 9);
+        ctx.fill();
+        ctx.fillStyle = '#2e1329';
+        ctx.fillRect(en.x + 10, en.y + 9, 8, 8);
+        ctx.fillRect(en.x + en.w - 18, en.y + 9, 8, 8);
+      });
+
+      particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.1;
+        p.life -= 1;
+        ctx.globalAlpha = Math.max(0, p.life / 45);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+      });
+      ctx.globalAlpha = 1;
+      particles = particles.filter(p => p.life > 0);
+
+      if (!(player.invuln > 0 && Math.floor(player.invuln / 6) % 2 === 0)) {
+        const body = ctx.createLinearGradient(player.x, player.y, player.x, player.y + player.h);
+        body.addColorStop(0, '#88f6ff');
+        body.addColorStop(1, '#2f99ff');
+        ctx.fillStyle = body;
+        roundRect(player.x, player.y, player.w, player.h, 10);
+        ctx.fill();
+        ctx.fillStyle = '#12336d';
+        ctx.fillRect(player.x + 8, player.y + 13, 8, 8);
+        ctx.fillRect(player.x + player.w - 16, player.y + 13, 8, 8);
+      }
+
+      if (player.wallSliding) {
+        ctx.fillStyle = 'rgba(190,220,255,0.4)';
+        for (let i = 0; i < 7; i++) {
+          ctx.fillRect(player.x + (player.onWall > 0 ? player.w + 2 : -4), player.y + i * 10, 3, 6);
+        }
+      }
+    }
+
+    function loop() {
+      requestAnimationFrame(loop);
+      if (!active) return;
+
+      if (gameState === 'playing') {
+        input();
+        physics();
+      }
+
+      if (screenShake > 0) {
+        screenShake *= 0.85;
+      }
+
+      ctx.save();
+      const shakeX = (Math.random() - 0.5) * screenShake;
+      const shakeY = (Math.random() - 0.5) * screenShake;
+      ctx.translate(shakeX, shakeY);
+      drawWorld();
+      ctx.restore();
+    }
+
+    function normalizeKey(k) {
+      return k.length === 1 ? k.toLowerCase() : k.toLowerCase();
+    }
+
+    window.addEventListener('keydown', (e) => {
+      keys[normalizeKey(e.key)] = true;
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(normalizeKey(e.key))) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    window.addEventListener('keyup', (e) => {
+      keys[normalizeKey(e.key)] = false;
+    });
+
+    startBtn.addEventListener('click', () => {
+      startPanel.classList.add('hidden');
+      loadLevel(0);
+      gameState = 'playing';
+    });
+
+    loadLevel(0);
+    loop();
+  </script>
+</body>
+</html>
